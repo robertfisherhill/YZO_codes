@@ -1,0 +1,393 @@
+# Modules
+from tkinter import *
+import win32com.client
+import pandas as pd
+import os as os
+import time
+from shutil import copy
+import numpy as np
+
+# Libraries
+count_day_range = {"1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "10": 10, "11": 11, "12": 12,
+                   "13": 13, "14": 14, "15": 15, "16": 16, "17": 17, "18": 18}
+
+
+# Functions
+def click():
+    output.config(state=NORMAL)  # unlocks textbox
+    entered_text = textentry.get()
+    output.delete(0, END)
+    try:
+        count_day = count_day_range[entered_text]
+    except:
+        count_day = "!! Not a count day !!"
+
+    output.insert(END, count_day)
+
+    # fetches count day for saving
+    day_data = pd.DataFrame(columns=["DAY"])
+    day_data["DAY"] = [output.get()]
+
+    # saves count day for later
+    with pd.ExcelWriter(r'C:\TEMP\Rotomat Stocktake\Other\countday.xlsx') as writer:
+        day_data.to_excel(writer, sheet_name="countday", index=False)
+
+    output.config(state=DISABLED)  # locks textbox
+
+
+def close_window():
+    window.destroy()
+    exit()
+
+
+def make_folders():
+    try:
+        os.makedirs(r'C:\temp')
+    except FileExistsError:
+        # directory already exists
+        pass
+
+    try:
+        os.makedirs(r'C:\TEMP\Rotomat Stocktake')
+    except FileExistsError:
+        # directory already exists
+        pass
+
+    try:
+        os.makedirs(r'C:\TEMP\Rotomat Stocktake\Print Count Sheet')
+    except FileExistsError:
+        # directory already exists
+        pass
+    try:
+        os.makedirs(r'C:\TEMP\Rotomat Stocktake\Capture Count Sheet')
+    except FileExistsError:
+        # directory already exists
+        pass
+
+    try:
+        os.makedirs(r'C:\TEMP\Rotomat Stocktake\Inv Snapshot')
+    except FileExistsError:
+        # directory already exists
+        pass
+
+    try:
+        os.makedirs(r'C:\TEMP\Rotomat Stocktake\Other')
+    except FileExistsError:
+        # directory already exists
+        pass
+
+    try:
+        os.makedirs(r'C:\TEMP\Rotomat Stocktake\Variance')
+    except FileExistsError:
+        # directory already exists
+        pass
+
+
+def refresh_excel_syspro():
+    xlapp = win32com.client.DispatchEx("Excel.Application")
+    wb = xlapp.Workbooks.Open(
+        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory.xlsx')
+    wb.RefreshAll()
+    xlapp.CalculateUntilAsyncQueriesDone()
+    xlapp.DisplayAlerts = False
+    wb.Save()
+    wb.Close()
+    xlapp.Quit()
+
+
+def refresh_excel_rotomat():
+    xlapp = win32com.client.DispatchEx("Excel.Application")
+    wb = xlapp.Workbooks.Open(
+        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins.xlsm')
+    wb.RefreshAll()
+    xlapp.CalculateUntilAsyncQueriesDone()
+    xlapp.DisplayAlerts = False
+    wb.Save()
+    wb.Close()
+    xlapp.Quit()
+
+
+def import_and_save_syspro():
+    refresh_excel_syspro()
+    refresh_excel_rotomat()
+    # import syspro data
+    pivotimported = pd.read_excel(
+        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory.xlsx',
+        sheet_name='SYSPRO_INV_DATA')
+
+    # concatenate timestamp file path
+    output_folder = r'C:\TEMP\Rotomat Stocktake\Inv Snapshot\\'
+    timestr = time.strftime("%Y%m%d-%H%M")
+    output_filename = '-INV_Snapshot.xlsx'
+
+    # create timestamped snapshot
+    with pd.ExcelWriter(output_folder + timestr + output_filename) as writer:
+        pivotimported.to_excel(writer, sheet_name="INV_Snapshot", index=False)
+
+    # create generic timestamp
+    with pd.ExcelWriter(r'C:\TEMP\Rotomat Stocktake\Inv Snapshot\INV_Snapshot.xlsx') as writer:
+        pivotimported.to_excel(writer, sheet_name="INV_Snapshot", index=False)
+
+    #importing data
+    roto_imported = pd.read_excel(
+        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins.xlsm',
+        sheet_name='Rotobin_Overview')
+    inv_imported = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Inv Snapshot\INV_Snapshot.xlsx', sheet_name='INV_Snapshot')
+    count_day_df = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Other\countday.xlsx', sheet_name="countday")
+
+    # merging tables
+    add_inv_info_to_roto = pd.merge(roto_imported, inv_imported[
+        ['StockCode', 'Description', 'ProductClass', 'Brand', 'StickerColour', 'OptITWarehouse']], on='StockCode',
+                                    how="left")
+    count_list = pd.merge(add_inv_info_to_roto, inv_imported[['WH+SKU', 'QtyOnHand', 'QtyAllocated', 'QtyInTransit','UnitCost']],
+                          on="WH+SKU", how="left")
+
+    # fetching count day
+    count_day = count_day_df["DAY"][0]
+
+    # filtering merged table
+    count_list = count_list[~count_list['Classification'].str.contains('Assigned to Large Bin')]  # filters out
+    count_list = count_list.drop_duplicates(subset=['Order'])
+    count_list = count_list[count_list['CountDay'] == count_day]
+
+    # create copy_count_list
+    copy_count_list = count_list
+    with pd.ExcelWriter(r'C:\TEMP\Rotomat Stocktake\Other\copy_count_list.xlsx') as writer:
+        copy_count_list.to_excel(writer, sheet_name="copy_count_list", index=False)
+
+
+def generate_count_sheet():
+    refresh_excel_rotomat()
+    refresh_excel_syspro()
+    # importing data
+    roto_imported = pd.read_excel(
+        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins.xlsm',
+        sheet_name='Rotobin_Overview')
+    inv_imported = pd.read_excel(
+        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory.xlsx',
+        sheet_name='SYSPRO_INV_DATA')
+    count_day_df = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Other\countday.xlsx', sheet_name="countday")
+    # merging tables
+    add_inv_info_to_roto = pd.merge(roto_imported, inv_imported[
+        ['StockCode', 'Description', 'ProductClass', 'Brand', 'StickerColour', 'OptITWarehouse']], on='StockCode',
+                                    how="left")
+    count_list = pd.merge(add_inv_info_to_roto, inv_imported[['WH+SKU', 'QtyOnHand', 'QtyAllocated', 'QtyInTransit']],
+                          on="WH+SKU", how="left")
+    # fetching count day
+    count_day = count_day_df["DAY"][0]
+    # filtering merged table
+    count_list = count_list.drop_duplicates(subset=['Order'])
+    count_list = count_list[~count_list['Classification'].str.contains('Assigned to Large Bin')]  # filters out
+    count_list = count_list[count_list['CountDay'] == count_day]
+    # clean up count list for pivoting
+    count_list = count_list.drop(columns=['QtyOnHand', 'QtyAllocated', 'QtyInTransit', 'Order'])
+    count_list = count_list.fillna("NA")
+    count_list.rename(columns={'Rotomat': 'Roto', 'Level': 'Lvl', 'Position': 'Pos'}, inplace=True)
+    # generate count pivot
+    piv_table = pd.pivot_table(count_list,
+                               index=['Roto', 'Lvl', 'Pos', 'Bin Code', 'StockCode', 'Description'],
+                               fill_value=0)
+    # add count column with blank cells
+    piv_table['Count'] = ''
+    cap_piv_table = piv_table.copy()  ## new
+    cap_piv_table['Transfer'] = ''  ## new
+    cap_piv_table['Comment'] = ''  ## new
+    # save count pivot to R1 to R4 sheets
+    with pd.ExcelWriter(r'C:\TEMP\Rotomat Stocktake\Print Count Sheet\Rotomat_Count_Snapshot.xlsx') as writer:
+        # for loop creating a pivot output sheet for each rotomat
+        for i, x in piv_table.groupby('Roto'):
+            x.to_excel(writer, sheet_name=i, )
+
+    with pd.ExcelWriter(r'C:\TEMP\Rotomat Stocktake\Capture Count Sheet\Rotomat_Count_Capture.xlsx') as writer:
+        # for loop creating a pivot output sheet for each rotomat
+        for i, x in cap_piv_table.groupby('Roto'):   ## new
+            x.to_excel(writer, sheet_name=i, )
+
+
+def import_count_calc_and_output_variance():
+    # import captured count and concatenate
+    sheets_dict = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Capture Count Sheet\Rotomat_Count_Capture.xlsx',
+                                sheet_name=None, dtype={'StockCode': 'string'})
+    full_table = pd.DataFrame()
+
+    for name, sheet in sheets_dict.items():
+        sheet['sheet'] = name
+        sheet = sheet.rename(columns=lambda x: x.split('\n')[-1])
+        full_table = full_table.append(sheet)
+
+    full_table.reset_index(inplace=True, drop=True)
+    counted = full_table.drop(columns=['sheet', 'Roto', 'Lvl', 'Pos', 'Bin Code', 'Description', "CountDay"])
+
+
+    # import copy of count list
+    copy_count_list = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Other\copy_count_list.xlsx', sheet_name='copy_count_list',
+                                    dtype={'StockCode': 'string'})
+
+    # merge copy_count_list and captured count
+    variance = pd.merge(copy_count_list, counted, on='StockCode', how='left')
+
+    # clear up blank cells in file
+    variance['Description'] = variance['Description'].fillna(value='-')
+    variance['ProductClass'] = variance['ProductClass'].fillna(value='-')
+    variance['Brand'] = variance['Brand'].fillna(value='-')
+    variance['StickerColour'] = variance['StickerColour'].fillna(value='-')
+    variance['OptITWarehouse'] = variance['OptITWarehouse'].fillna(value='-')
+    variance = variance.fillna(value=0)
+    variance = variance.drop_duplicates(subset=['Order'])
+
+    # calculate variance
+    variance['Variance'] = variance['Count'] - variance['QtyOnHand']
+    variance['Final'] = variance['Variance'] - variance['Transfer'] ## new
+
+    # export variance sheet
+    with pd.ExcelWriter(r'C:\TEMP\Rotomat Stocktake\Variance\Variance.xlsx') as writer:
+        variance.to_excel(writer, sheet_name="Variance", index=False)
+
+    open_variance_file()
+
+
+def calculate_variance_report():
+    final_variance = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Variance\Variance.xlsx', sheet_name='Variance', dtype={'StockCode': 'string'})
+    final_variance['FinalValue'] = final_variance['Final'] * final_variance['UnitCost']
+    piv_table = pd.pivot_table(final_variance, values=['Final', 'FinalValue'], index=['ProductClass', 'Brand'], aggfunc=np.sum, fill_value=0, margins=True, margins_name='Total')
+    # piv_table.style.format({'R {:.2f'})
+
+
+    with pd.ExcelWriter(r'C:\TEMP\Rotomat Stocktake\Variance\Final_Variance.xlsx') as writer:
+        piv_table.to_excel(writer, sheet_name="Variance_pivot")
+        final_variance.to_excel(writer, sheet_name='Variance', index=False)
+
+    open_final_variance_file()
+
+
+def open_variance_file():
+    os.startfile(r'C:\TEMP\Rotomat Stocktake\Variance\Variance.xlsx')
+
+
+def open_final_variance_file():
+    os.startfile(r'C:\TEMP\Rotomat Stocktake\Variance\Final_Variance.xlsx')
+
+
+def open_count_file():
+    os.startfile(r'C:\TEMP\Rotomat Stocktake\Print Count Sheet\Rotomat_Count_Snapshot.xlsx')
+
+
+def open_capture_file():
+    os.startfile(r'C:\TEMP\Rotomat Stocktake\Capture Count Sheet\Rotomat_Count_Capture.xlsx')
+
+
+def copy_files_to_completed_count_folder():
+    capture_file = r'C:\TEMP\Rotomat Stocktake\Capture Count Sheet\Rotomat_Count_Capture.xlsx'
+    variance_file = r'C:\TEMP\Rotomat Stocktake\Variance\Variance.xlsx'
+    final_variance_file = r'C:\TEMP\Rotomat Stocktake\Variance\Final_Variance.xlsx'
+    inventory_file = r'C:\TEMP\Rotomat Stocktake\Inv Snapshot\INV_Snapshot.xlsx'
+    count_day_df = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Other\countday.xlsx', sheet_name="countday")
+    try:
+        os.makedirs(r'\\ultron\kfml data$\Yellow Zebra\1-Stock Control\Cycle Count\Rotomat Cycle Count Archive')
+    except FileExistsError:
+        # directory already exists
+        pass
+    archive_folder = r'\\ultron\kfml data$\Yellow Zebra\1-Stock Control\Cycle Count\Rotomat Cycle Count Archive\\'
+    timestrfolder = time.strftime("%Y%m%d")
+    output_foldername = ' - Cycle Count (CycleDay-'
+    count_day = count_day_df["DAY"][0]
+    count_day = str(count_day)
+    output_foldername_end = ')'
+    path = archive_folder + timestrfolder + output_foldername + count_day + output_foldername_end
+    try:
+        os.makedirs(path)
+    except FileExistsError:
+        # directory already exists
+        pass
+    copy(capture_file, path)
+    copy(variance_file, path)
+    copy(inventory_file, path)
+    copy(final_variance_file, path)
+
+
+def open_archive_folder():
+    os.startfile(r'\\ultron\kfml data$\Yellow Zebra\1-Stock Control\Cycle Count\Rotomat Cycle Count Archive')
+
+
+make_folders()
+
+# Window
+window = Tk()
+window.geometry('550x650')
+window.title("Rotomat Count Generator")
+
+# logo:
+logo = PhotoImage(file=r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\YZO_logo\logo.png')
+Label(window, image=logo, ).grid(row=0, column=0, sticky=W)
+
+# create label for count day
+Label(window, text="1. Enter count day (1 to 18)", font="none 12 bold").grid(row=1, column=0, sticky=W)
+
+# text entry for count day
+textentry = Entry(window, width=20, bg="white")
+textentry.grid(row=2, column=0, sticky=W)
+
+# submit count day button
+Button(window, text="Submit", width=6, command=click).grid(row=3, column=0, sticky=W)
+
+# create label for displaying count day captured
+Label(window, text="Count day entered", font="none 12 bold").grid(row=4, column=0, sticky=W)
+
+# text box showing count day captured
+output = Entry(window, width=20)
+output.grid(row=5, column=0, sticky=W)
+output.config(state=DISABLED)
+
+# Label for count generator button
+Label(window, text="2. Click to generate count", font="none 12 bold").grid(row=6, column=0, sticky=W)
+
+# Count generator button
+Button(window, text="Generate", width=14, command=generate_count_sheet).grid(row=7, column=0, sticky=W)
+
+# Label for count generator button
+Label(window, text="3. Open count file to print", font="none 12 bold").grid(row=8, column=0, sticky=W)
+
+# Count sheet open button
+Button(window, text="Open", width=14, command=open_count_file).grid(row=9, column=0, sticky=W)
+
+# Label for import and calculate variance
+Label(window, text="4. Open capture sheet", font="none 12 bold").grid(row=10, column=0, sticky=W)
+
+# Import and calculate variance
+Button(window, text="Open", width=14, command=open_capture_file).grid(row=11, column=0, sticky=W)
+
+# Label for snapshot generator button
+Label(window, text="5. Click to generate snapshot", font="none 12 bold").grid(row=12, column=0, sticky=W)
+
+# Snapshot button
+Button(window, text="Snapshot", width=14, command=import_and_save_syspro).grid(row=13, column=0, sticky=W)
+
+# Label for import and calculate variance
+Label(window, text="6. Import and calculate variance", font="none 12 bold").grid(row=14, column=0, sticky=W)
+
+# Import and calculate variance
+Button(window, text="Calculate", width=14, command=import_count_calc_and_output_variance).grid(row=15, column=0, sticky=W)
+
+# Label for import and calculate variance
+Label(window, text="7. Calculate Final Variance Report", font="none 12 bold").grid(row=16, column=0, sticky=W)
+
+# Import and calculate variance
+Button(window, text="Calculate", width=14, command=calculate_variance_report).grid(row=17, column=0, sticky=W)
+
+# Label for import and calculate variance
+Label(window, text="8. Copy files to completed count folder", font="none 12 bold").grid(row=18, column=0, sticky=W)
+
+# Import and calculate variance
+Button(window, text="Copy", width=14, command=copy_files_to_completed_count_folder).grid(row=19, column=0, sticky=W)
+
+# Import and calculate variance
+Button(window, text="Open Archive", width=14, command=open_archive_folder).grid(row=19, column=1, sticky=W)
+
+# Label for Exit
+Label(window, text="9. Click to exit", font="none 12 bold").grid(row=20, column=0, sticky=W)
+
+# Exit button
+Button(window, text="Exit", width=14, command=close_window).grid(row=21, column=0, sticky=W)
+
+# Main loop
+window.mainloop()

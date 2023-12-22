@@ -1,0 +1,285 @@
+# Modules
+import win32com.client
+import pandas as pd
+import os as os
+import numpy as np
+from openpyxl.utils import get_column_letter
+import openpyxl
+import xlsxwriter
+from openpyxl.styles import Border, Side
+
+
+def make_folders():
+    try:
+        os.makedirs(r'C:\temp')
+    except FileExistsError:
+        # directory already exists
+        pass
+
+    try:
+        os.makedirs(r'C:\TEMP\Rotomat Replenishment')
+    except FileExistsError:
+        # directory already exists
+        pass
+
+
+def refresh_excel_rotomat():
+    xlapp = win32com.client.DispatchEx("Excel.Application")
+    wb = xlapp.Workbooks.Open(
+        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins_For_Replen.xlsm')
+    wb.RefreshAll()
+    xlapp.CalculateUntilAsyncQueriesDone()
+    xlapp.DisplayAlerts = False
+    wb.Save()
+    wb.Close()
+    xlapp.Quit()
+
+
+def refresh_excel_syspro():
+    xlapp = win32com.client.DispatchEx("Excel.Application")
+    wb = xlapp.Workbooks.Open(
+        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory_For_Replen.xlsx')
+    wb.RefreshAll()
+    xlapp.CalculateUntilAsyncQueriesDone()
+    xlapp.DisplayAlerts = False
+    wb.Save()
+    wb.Close()
+    xlapp.Quit()
+
+
+def create_workbook(file):
+    workbook = xlsxwriter.Workbook(file)
+    workbook.close()
+
+
+outputfile = r'C:\TEMP\Rotomat Replenishment\Roto Replen Priority 1.xlsx'
+
+outputfile2 = r'C:\TEMP\Rotomat Replenishment\Roto Replen Priority 2.xlsx'
+
+make_folders()
+
+
+create_workbook(outputfile)
+create_workbook(outputfile2)
+
+refresh_excel_syspro()
+refresh_excel_rotomat()
+
+###ROTOMAT
+# importing rotomat bin data
+roto_imported = pd.read_excel(
+    r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins_For_Replen.xlsm',
+    sheet_name='Rotobin_Overview')
+# filters out reserved for double bin locations
+roto_imported = roto_imported[~roto_imported['Classification'].str.contains('Assigned to Large Bin')]
+# build roto_data dataframe
+roto_data = roto_imported[
+    ['Bin Code', 'StockCode', 'WH+SKU', 'Classification', 'Bin Capacity', 'Replen Level', 'Priority1', 'Priority2',
+     'Priority3', 'Priority4']]
+# create DB replenishment reference
+roto_data['ReplenRef'] = 'DB' + roto_data['StockCode'].map(str)
+
+###Syspro
+# importing syspro inventory data
+syspro_imported = pd.read_excel(
+    r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory_For_Replen.xlsx',
+    sheet_name='SYSPRO_INV_DATA')
+# build syspro_inv_qty dataframe
+syspro_inv_qty = syspro_imported[['WH+SKU', 'QtyOnHand', 'Description', 'Brand', 'QtyAllocated']]
+
+###Merging
+# Merge roto and RM syspro
+merge1 = pd.merge(roto_data, syspro_inv_qty, on="WH+SKU", how="left")
+# Merge result of first merge with DB syspro
+merge2 = pd.merge(merge1, syspro_inv_qty, left_on="ReplenRef", right_on="WH+SKU", how="left")
+
+##Fill blank RM1 qty with zeros  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!NEW
+merge2["QtyOnHand_x"] = merge2["QtyOnHand_x"].fillna(value=0)
+merge2['QtyAllocated_x'] = merge2['QtyAllocated_x'].fillna(value=0)
+
+merge2['Description_x'] = merge2['Description_x'].fillna(value='TBC')
+merge2['Brand_x'] = merge2['Brand_x'].fillna(value='TBC')
+merge2['Description_x'] = np.where(merge2['Description_x'] == 'TBC', merge2['Description_y'], merge2['Description_x'])
+merge2['Brand_x'] = np.where(merge2['Brand_x'] == 'TBC', merge2['Brand_y'], merge2['Brand_x'])
+
+merge2['WH+SKU_y'] = merge2['WH+SKU_y'].fillna(value='TBC')
+merge2['QtyOnHand_y'] = merge2['QtyOnHand_y'].fillna(value=0)
+merge2['Description_y'] = merge2['Description_y'].fillna(value='TBC')
+merge2['Brand_y'] = merge2['Brand_y'].fillna(value='TBC')
+merge2['QtyAllocated_y'] = merge2['QtyAllocated_y'].fillna(value=0)
+
+
+###Calculations
+# Create and calculate difference for replen classification
+merge2['Difference'] = merge2["Replen Level"] - merge2["QtyOnHand_x"] - merge2['QtyAllocated_x'] ## included - qty allocated
+
+final1 = merge2  ##for 'neatness'
+# Select only where should replenish
+final1 = final1[final1['Difference'] > 0]
+# Calculate on hand not reserved by sales orders
+final1['RM Avail'] = final1['QtyOnHand_x'] - final1['QtyAllocated_x'] ## moved this up
+# Logic to indicate max replen quantity
+final1['Pull Req'] = np.where(final1['Difference'] < final1['QtyOnHand_y'], final1['Priority1'],
+                                  final1['QtyOnHand_y'])  # max replen or max db quantity
+final1['Pull Req'] = np.where(final1['RM Avail'] + final1['Priority1'] > final1['Bin Capacity'],
+                                  final1['Priority2'],
+                                  final1['Pull Req'])  # Second tier replen if not max (stop over capacity stocking) ## changed from qoh_x to rm avail
+final1['Pull Req'] = np.where(final1['Pull Req'] > final1['QtyOnHand_y'], final1['QtyOnHand_y'], final1[
+    'Pull Req'])  # should set any pull request showing over available qty to max available qty in DB
+
+# Create acual pick column
+final1['Picked'] = ''
+
+###Cleaning up
+# Filter for only where DB has qty (cant replen from zero)
+final2 = final1[final1['QtyOnHand_y'] > 0]
+# Clean up columns not required on report
+final2 = final2.drop(
+    columns=['WH+SKU_x', 'ReplenRef', 'WH+SKU_y', 'Description_y', 'Brand_y', 'QtyAllocated_y', 'Bin Capacity',
+             'Replen Level', 'Priority1', 'Priority2', 'Priority3', 'Priority4', 'Difference'])
+# Rename columns for report
+final2.rename(columns={'Classification': 'Bin Size', 'QtyOnHand_x': 'RM Qty', 'Brand_x': 'Brand',
+                       'QtyAllocated_x': 'RM SO', 'QtyOnHand_y': 'DB Qty', 'Description_x': 'Description'},
+              inplace=True)
+# Reorder columns for report
+final2 = final2[
+    ['Brand', "Description", "StockCode", "Bin Code", 'Bin Size', 'RM Qty', 'RM SO', 'RM Avail', 'DB Qty',
+     'Pull Req', 'Picked']]  # this format to reorder columns
+
+priority1 = final2[final2['Pull Req'] > 9]
+
+priority2 = final2[final2['Pull Req'] < 10]
+
+
+
+
+###Export
+# Exports temporary dataframes (building processes)
+with pd.ExcelWriter(r'C:\TEMP\replen_merge_test.xlsx') as writer:
+    merge1.to_excel(writer, sheet_name="sysprodata", index=False)
+    merge2.to_excel(writer, sheet_name="rotodata", index=False)
+    final1.to_excel(writer, sheet_name='testfinal1', index=False)
+    final2.to_excel(writer, sheet_name='testfinal2', index=False)
+
+# Export report
+with pd.ExcelWriter(outputfile) as writer:
+    # for loop creating a pivot output sheet for each rotomat
+    for i, x in priority1.groupby('Brand'):
+        x.to_excel(writer, sheet_name=i, index=False)
+
+with pd.ExcelWriter(outputfile2) as writer:
+    # for loop creating a pivot output sheet for each rotomat
+    for i, x in priority2.groupby('Brand'):
+        x.to_excel(writer, sheet_name=i, index=False)
+
+# Format report
+# using openpyxl and xlsxwriter
+
+### Priority 1 report
+
+wb = openpyxl.load_workbook(filename=outputfile)  # create openpyxl object
+for worksheet in wb:  # for each worksheet in the workbook
+    for col in worksheet.columns:  # for each column in the worksheet
+        max_length = 0
+        column = get_column_letter(col[0].column)  # Get the column name
+        for cell in col:  # for each cell in column, finds the longest cell value
+            try:  # Necessary to avoid error on empty cells
+                if len(str(cell.value)) > max_length:
+                    max_length = len(cell.value)
+            except:
+                pass
+        adjusted_width = (max_length + 2)  # sets the new width, can also multiply by a value to increase (eg: * 1.2)
+        worksheet.column_dimensions[column].width = adjusted_width
+
+
+def set_border(ws, cell_range):  # sets the borders of the excel table
+    thin = Side(border_style="thin", color="000000")
+    for row in ws[cell_range]:
+        for cell in row:
+            cell.border = Border(top=thin, left=thin, right=thin, bottom=thin)
+
+
+# loop for all worksheets in a workbook, makes borders for cell range
+for worksheet in wb:
+    startcell = 'A2:'
+    lastrow = worksheet.max_row
+    lastcolumn = xlsxwriter.utility.xl_col_to_name(worksheet.max_column - 1)
+    border_range = startcell + lastcolumn + str(lastrow)
+    set_border(worksheet, border_range)
+
+
+# loop to add header and footer details
+for worksheet in wb:
+    worksheet.oddFooter.left.text = 'Current date: &D'
+    worksheet.evenFooter.left.text = 'Current date: &D'
+    worksheet.oddFooter.right.text = 'Current time: &T'
+    worksheet.evenFooter.right.text = 'Current time: &T'
+    worksheet.oddHeader.left.text = "Page &P of &N"
+    worksheet.evenHeader.left.text = "Page &P of &N"
+    worksheet.oddHeader.center.text = 'Filename: &F'
+    worksheet.evenHeader.center.text = 'Filename: &F'
+    worksheet.oddHeader.right.text = 'Sheetname: &A'
+    worksheet.evenHeader.right.text = 'Sheetname: &A'
+    worksheet.print_title_rows = '1:1'
+    worksheet.set_printer_settings(paper_size=1, orientation='landscape')
+    worksheet.sheet_properties.pageSetUpPr.fitToPage = True
+    worksheet.page_setup.fitToHeight = False
+
+
+# saves formatting changes
+wb.save(outputfile)
+
+
+### Priority 2 report
+
+wb = openpyxl.load_workbook(filename=outputfile2)  # create openpyxl object
+for worksheet in wb:  # for each worksheet in the workbook
+    for col in worksheet.columns:  # for each column in the worksheet
+        max_length = 0
+        column = get_column_letter(col[0].column)  # Get the column name
+        for cell in col:  # for each cell in column, finds the longest cell value
+            try:  # Necessary to avoid error on empty cells
+                if len(str(cell.value)) > max_length:
+                    max_length = len(cell.value)
+            except:
+                pass
+        adjusted_width = (max_length + 2)  # sets the new width, can also multiply by a value to increase (eg: * 1.2)
+        worksheet.column_dimensions[column].width = adjusted_width
+
+
+def set_border(ws, cell_range):  # sets the borders of the excel table
+    thin = Side(border_style="thin", color="000000")
+    for row in ws[cell_range]:
+        for cell in row:
+            cell.border = Border(top=thin, left=thin, right=thin, bottom=thin)
+
+
+# loop for all worksheets in a workbook, makes borders for cell range
+for worksheet in wb:
+    startcell = 'A2:'
+    lastrow = worksheet.max_row
+    lastcolumn = xlsxwriter.utility.xl_col_to_name(worksheet.max_column - 1)
+    border_range = startcell + lastcolumn + str(lastrow)
+    set_border(worksheet, border_range)
+
+
+# loop to add header and footer details
+for worksheet in wb:
+    worksheet.oddFooter.left.text = 'Current date: &D'
+    worksheet.evenFooter.left.text = 'Current date: &D'
+    worksheet.oddFooter.right.text = 'Current time: &T'
+    worksheet.evenFooter.right.text = 'Current time: &T'
+    worksheet.oddHeader.left.text = "Page &P of &N"
+    worksheet.evenHeader.left.text = "Page &P of &N"
+    worksheet.oddHeader.center.text = 'Filename: &F'
+    worksheet.evenHeader.center.text = 'Filename: &F'
+    worksheet.oddHeader.right.text = 'Sheetname: &A'
+    worksheet.evenHeader.right.text = 'Sheetname: &A'
+    worksheet.print_title_rows = '1:1'
+    worksheet.set_printer_settings(paper_size=1, orientation='landscape')
+    worksheet.sheet_properties.pageSetUpPr.fitToPage = True
+    worksheet.page_setup.fitToHeight = False
+
+
+# saves formatting changes
+wb.save(outputfile2)
