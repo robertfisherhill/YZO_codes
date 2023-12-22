@@ -9,7 +9,7 @@ except FileExistsError:
     # directory already exists
     pass
 
-os.chdir(r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Tracing\Master Trace Library')
+os.chdir(r'\\(removed)Tracing\Master Trace Library')
 
 cur = os.getcwd()
 folder = os.listdir(cur)
@@ -44,7 +44,7 @@ trace_library = trace_library[['Files', 'Traced', 'Date Created']]
 
 ##fetches non traceable library
 non_tracable_library = pd.read_excel\
-    (r'\\ultron\kfml data$\Yellow Zebra\Lens Portal\LP LAB TRACKING\tracing\Not Traceable Frames.xlsx', dtype
+    (r'\\(removed)tracing\Not Traceable Frames.xlsx', dtype
     ={'FRAME STOCK CODE': 'string'})  # fetches excel data on non traceable frames
 
 
