@@ -26,7 +26,7 @@ def make_folders():
 def refresh_excel_rotomat():
     xlapp = win32com.client.DispatchEx("Excel.Application")
     wb = xlapp.Workbooks.Open(
-        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins_For_Replen.xlsm')
+        r'\\(removed)December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins_For_Replen.xlsm')
     wb.RefreshAll()
     xlapp.CalculateUntilAsyncQueriesDone()
     xlapp.DisplayAlerts = False
@@ -38,7 +38,7 @@ def refresh_excel_rotomat():
 def refresh_excel_syspro():
     xlapp = win32com.client.DispatchEx("Excel.Application")
     wb = xlapp.Workbooks.Open(
-        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory_For_Replen.xlsx')
+        r'\\(removed)December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory_For_Replen.xlsx')
     wb.RefreshAll()
     xlapp.CalculateUntilAsyncQueriesDone()
     xlapp.DisplayAlerts = False
@@ -68,7 +68,7 @@ refresh_excel_rotomat()
 ###ROTOMAT
 # importing rotomat bin data
 roto_imported = pd.read_excel(
-    r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins_For_Replen.xlsm',
+    r'\\(removed)December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins_For_Replen.xlsm',
     sheet_name='Rotobin_Overview')
 # filters out reserved for double bin locations
 roto_imported = roto_imported[~roto_imported['Classification'].str.contains('Assigned to Large Bin')]
@@ -82,7 +82,7 @@ roto_data['ReplenRef'] = 'DB' + roto_data['StockCode'].map(str)
 ###Syspro
 # importing syspro inventory data
 syspro_imported = pd.read_excel(
-    r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory_For_Replen.xlsx',
+    r'\\(removed)December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory_For_Replen.xlsx',
     sheet_name='SYSPRO_INV_DATA')
 # build syspro_inv_qty dataframe
 syspro_inv_qty = syspro_imported[['WH+SKU', 'QtyOnHand', 'Description', 'Brand', 'QtyAllocated']]
