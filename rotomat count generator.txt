@@ -86,7 +86,7 @@ def make_folders():
 def refresh_excel_syspro():
     xlapp = win32com.client.DispatchEx("Excel.Application")
     wb = xlapp.Workbooks.Open(
-        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory.xlsx')
+        r'\\(removed)December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory.xlsx')
     wb.RefreshAll()
     xlapp.CalculateUntilAsyncQueriesDone()
     xlapp.DisplayAlerts = False
@@ -98,7 +98,7 @@ def refresh_excel_syspro():
 def refresh_excel_rotomat():
     xlapp = win32com.client.DispatchEx("Excel.Application")
     wb = xlapp.Workbooks.Open(
-        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins.xlsm')
+        r'\\(removed)December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins.xlsm')
     wb.RefreshAll()
     xlapp.CalculateUntilAsyncQueriesDone()
     xlapp.DisplayAlerts = False
@@ -112,7 +112,7 @@ def import_and_save_syspro():
     refresh_excel_rotomat()
     # import syspro data
     pivotimported = pd.read_excel(
-        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory.xlsx',
+        r'\\(removed)December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory.xlsx',
         sheet_name='SYSPRO_INV_DATA')
 
     # concatenate timestamp file path
@@ -130,7 +130,7 @@ def import_and_save_syspro():
 
     #importing data
     roto_imported = pd.read_excel(
-        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins.xlsm',
+        r'\\(removed)December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins.xlsm',
         sheet_name='Rotobin_Overview')
     inv_imported = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Inv Snapshot\INV_Snapshot.xlsx', sheet_name='INV_Snapshot')
     count_day_df = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Other\countday.xlsx', sheet_name="countday")
@@ -161,10 +161,10 @@ def generate_count_sheet():
     refresh_excel_syspro()
     # importing data
     roto_imported = pd.read_excel(
-        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins.xlsm',
+        r'\\(removed)December 2020\RFH\Python\Rotomat_Bins\Rotomat_Bins.xlsm',
         sheet_name='Rotobin_Overview')
     inv_imported = pd.read_excel(
-        r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory.xlsx',
+        r'\\(removed)December 2020\RFH\Python\INV_Snapshot\Syspro_Inventory.xlsx',
         sheet_name='SYSPRO_INV_DATA')
     count_day_df = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Other\countday.xlsx', sheet_name="countday")
     # merging tables
@@ -283,11 +283,11 @@ def copy_files_to_completed_count_folder():
     inventory_file = r'C:\TEMP\Rotomat Stocktake\Inv Snapshot\INV_Snapshot.xlsx'
     count_day_df = pd.read_excel(r'C:\TEMP\Rotomat Stocktake\Other\countday.xlsx', sheet_name="countday")
     try:
-        os.makedirs(r'\\ultron\kfml data$\Yellow Zebra\1-Stock Control\Cycle Count\Rotomat Cycle Count Archive')
+        os.makedirs(r'\\(removed)Cycle Count\Rotomat Cycle Count Archive')
     except FileExistsError:
         # directory already exists
         pass
-    archive_folder = r'\\ultron\kfml data$\Yellow Zebra\1-Stock Control\Cycle Count\Rotomat Cycle Count Archive\\'
+    archive_folder = r'\\(removed)Cycle Count\Rotomat Cycle Count Archive\\'
     timestrfolder = time.strftime("%Y%m%d")
     output_foldername = ' - Cycle Count (CycleDay-'
     count_day = count_day_df["DAY"][0]
@@ -306,7 +306,7 @@ def copy_files_to_completed_count_folder():
 
 
 def open_archive_folder():
-    os.startfile(r'\\ultron\kfml data$\Yellow Zebra\1-Stock Control\Cycle Count\Rotomat Cycle Count Archive')
+    os.startfile(r'\\(removed)Cycle Count\Rotomat Cycle Count Archive')
 
 
 make_folders()
@@ -317,7 +317,7 @@ window.geometry('550x650')
 window.title("Rotomat Count Generator")
 
 # logo:
-logo = PhotoImage(file=r'\\ultron\kfml data$\Yellow Zebra\YZOCompanyArchivedData\Robert Fisher-Hill\December 2020\RFH\Python\YZO_logo\logo.png')
+logo = PhotoImage(file=r'\\(removed)December 2020\RFH\Python\YZO_logo\logo.png')
 Label(window, image=logo, ).grid(row=0, column=0, sticky=W)
 
 # create label for count day
